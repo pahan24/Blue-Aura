@@ -705,52 +705,22 @@ function renderHome() {
   const activeOffers = (DB.settings.offers || []).filter(o => o.active);
 
   let html = `
-    <!-- Hero: Full-Bleed Parallax Photo Slider -->
+    <!-- Hero: Full-Bleed Photo Slider -->
     <div class="hero-parallax" id="home-hero-slider">
-        <div class="star-field">
-          ${Array.from({ length: sky.stars }).map(() => {
-            const top = Math.random() * 70; // limit to top 70% of sky
-            const left = Math.random() * 100;
-            const size = 1 + Math.random() * 2.5;
-            const delay = Math.random() * 4;
-            return `<div class="star" style="top:${top}%; left:${left}%; width:${size}px; height:${size}px; animation-delay:${delay}s;"></div>`;
-          }).join("")}
-        </div>
-      ` : ''}
-
-      <!-- Drifting Clouds -->
-      ${sky.clouds > 0 ? `
-        <div class="cloud-field">
-          ${Array.from({ length: sky.clouds }).map((_, idx) => {
-            const top = 10 + Math.random() * 35; // top 45% of banner
-            const delay = idx * 12; // stagger clouds
-            const scale = 0.5 + Math.random() * 0.9;
-            const speed = 40 + Math.random() * 40; // animation duration
-            return `<div class="cloud" style="top:${top}%; left:-150px; transform: scale(${scale}); animation-delay:${delay}s; animation-duration:${speed}s;"></div>`;
-          }).join("")}
-        </div>
-      ` : ''}
-
-      <!-- 3D Rotating Garment Container -->
-      <div class="hero-3d-wrapper">
-        <div class="garment-3d-box" id="hero-3d-carousel-box">
-          <!-- Populated dynamically via JS -->
-        </div>
-      </div>
-
-      <!-- Slide content overlays -->
       ${slides.map((s, idx) => `
-        <div class="hero-slide ${idx === 0 ? 'active' : ''}" style="background: transparent;">
-          <div class="container" style="position: relative; height: 100%; display: flex; align-items: center; z-index: 2;">
+        <div class="hero-slide ${idx === 0 ? 'active' : ''}">
+          <img src="${s.img}" class="hero-slide-photo" alt="${s.subtitle}">
+          <div class="hero-slide-overlay"></div>
+          <div class="hero-slide-wrap">
             <div class="hero-slide-content">
-              <span class="hero-subtitle" style="color: #fff; opacity: 0.9;">${s.subtitle}</span>
-              <h1 class="hero-title" style="color: #fff; text-shadow: 0 4px 10px rgba(0,0,0,0.1);">${s.title}</h1>
+              <span class="hero-subtitle">${s.subtitle}</span>
+              <h1 class="hero-title">${s.title}</h1>
               <a href="${s.link}" class="btn btn-outline-white">Explore Collection</a>
             </div>
           </div>
         </div>
       `).join("")}
-      
+
       <div class="slider-dots">
         ${slides.map((_, idx) => `
           <div class="slider-dot ${idx === 0 ? 'active' : ''}" data-idx="${idx}"></div>
