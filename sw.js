@@ -3,9 +3,9 @@
  * Enables offline support, caching, and PWA install capability
  */
 
-const CACHE_NAME = 'blue-aura-v1.0.0';
-const STATIC_CACHE = 'blue-aura-static-v1.0.0';
-const DYNAMIC_CACHE = 'blue-aura-dynamic-v1.0.0';
+const CACHE_NAME = 'blue-aura-v1.0.1';
+const STATIC_CACHE = 'blue-aura-static-v1.0.1';
+const DYNAMIC_CACHE = 'blue-aura-dynamic-v1.0.1';
 
 // Core files to cache for offline use
 const STATIC_ASSETS = [
@@ -76,35 +76,45 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Cache-First: serve from cache, fall back to network and cache dynamically
+  const isCritical = request.destination === 'document'
+    || request.url.endsWith('/app.js')
+    || request.url.endsWith('/styles.css')
+    || request.url.endsWith('/index.html');
+
+  if (isCritical) {
+    event.respondWith(
+      fetch(request)
+        .then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200 && networkResponse.type !== 'opaque') {
+            const cloned = networkResponse.clone();
+            caches.open(DYNAMIC_CACHE).then((cache) => cache.put(request, cloned));
+          }
+          return networkResponse;
+        })
+        .catch(() => caches.match(request).then((cachedResponse) => cachedResponse || caches.match('./index.html')))
+    );
+    return;
+  }
+
+  // Cache-First: serve from cache for other static assets, fall back to network dynamically
   event.respondWith(
     caches.match(request).then((cachedResponse) => {
       if (cachedResponse) {
         return cachedResponse;
       }
 
-      // Not in cache — fetch from network and store in dynamic cache
       return fetch(request)
         .then((networkResponse) => {
-          // Only cache successful responses
           if (networkResponse && networkResponse.status === 200 && networkResponse.type !== 'opaque') {
             const cloned = networkResponse.clone();
-            caches.open(DYNAMIC_CACHE).then((cache) => {
-              cache.put(request, cloned);
-            });
+            caches.open(DYNAMIC_CACHE).then((cache) => cache.put(request, cloned));
           }
           return networkResponse;
         })
-        .catch(() => {
-          // Offline fallback: return cached index.html for navigation requests
-          if (request.destination === 'document') {
-            return caches.match('./index.html');
-          }
-          return new Response('Offline content not available.', {
-            status: 503,
-            headers: { 'Content-Type': 'text/plain' }
-          });
-        });
+        .catch(() => new Response('Offline content not available.', {
+          status: 503,
+          headers: { 'Content-Type': 'text/plain' }
+        }));
     })
   );
 });

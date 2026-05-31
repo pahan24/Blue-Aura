@@ -2913,6 +2913,25 @@ img {
 #loading-overlay .logo-text span {
   color: var(--accent-color);
 }
+.loading-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 26px 30px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: 0 20px 80px rgba(0, 0, 0, 0.18);
+  min-width: 280px;
+}
+.loading-text {
+  color: rgba(239, 245, 255, 0.9);
+  font-size: 0.95rem;
+  letter-spacing: 0.5px;
+  line-height: 1.6;
+  max-width: 320px;
+}
 .loading-spinner {
   width: 44px;
   height: 44px;
