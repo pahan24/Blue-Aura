@@ -7,6 +7,7 @@ const DB = {
   products: [],
   orders: [],
   users: [],
+  messages: [],  // User messages: {id, to, from, subject, body, timestamp, read, type: 'system'|'support'}
   settings: {
     shippingBase: 350.00,
     promoCodes: {
@@ -204,6 +205,61 @@ async function sendLoginEmailToUser(user) {
     return result;
   } catch (err) {
     logToTerminal('[Email] Failed to call backend email endpoint: ' + err.message);
+    throw err;
+  }
+}
+
+// Send message to user (with automatic Gmail notification)
+async function sendMessageToUser(toEmail, subject, body, fromName = "Blue Aura Support") {
+  try {
+    const msgId = "MSG-" + Date.now() + "-" + Math.random().toString(36).substr(2, 9);
+    const message = {
+      id: msgId,
+      to: toEmail,
+      from: fromName,
+      subject: subject,
+      body: body,
+      timestamp: new Date().toISOString(),
+      read: false,
+      type: 'support'
+    };
+
+    // Store message in DB
+    DB.messages.push(message);
+    saveMessagesToLocalStorage();
+
+    // Send to backend for Gmail dispatch
+    try {
+      const payload = {
+        to: toEmail,
+        subject: subject,
+        actionType: 'message',
+        order: {
+          id: msgId,
+          email: toEmail,
+          customerName: toEmail,
+          message: body,
+          date: new Date().toISOString()
+        }
+      };
+
+      const resp = await fetch(STATE.liveBackendUrl + '/api/email/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      }).catch(() => null);
+
+      if (resp) {
+        const result = await resp.json().catch(() => ({}));
+        logToTerminal('[Message] Sent to ' + toEmail + ' with Gmail notification');
+      }
+    } catch (err) {
+      logToTerminal('[Message] Queued for ' + toEmail + ' (Gmail delivery skipped: ' + err.message + ')');
+    }
+
+    return message;
+  } catch (err) {
+    logToTerminal('[Message Error] Failed to send message: ' + err.message);
     throw err;
   }
 }
@@ -617,6 +673,14 @@ function initDB() {
     DB.users = JSON.parse(storedUsers);
   }
 
+  // Load messages
+  const storedMessages = localStorage.getItem("blue_aura_messages");
+  if (storedMessages) {
+    DB.messages = JSON.parse(storedMessages);
+  } else {
+    DB.messages = [];
+  }
+
   // Load current user session
   const sessionUser = sessionStorage.getItem("blue_aura_user");
   if (sessionUser) {
@@ -641,6 +705,9 @@ function saveProductsToLocalStorage() {
 }
 function saveOrdersToLocalStorage() {
   localStorage.setItem("blue_aura_orders", JSON.stringify(DB.orders));
+}
+function saveMessagesToLocalStorage() {
+  localStorage.setItem("blue_aura_messages", JSON.stringify(DB.messages));
 }
 function saveCartToLocalStorage() {
   localStorage.setItem("blue_aura_cart", JSON.stringify(STATE.cart));
@@ -1855,7 +1922,9 @@ function triggerForgotPassword(e) {
 function renderMyAccount() {
   const user = STATE.currentUser;
   const userOrders = DB.orders.filter(o => o.email.toLowerCase() === user.email.toLowerCase());
-  const userMsgs = STATE.sentEmails.filter(e => e.to.toLowerCase() === user.email.toLowerCase());
+  const systemEmails = STATE.sentEmails.filter(e => e.to.toLowerCase() === user.email.toLowerCase());
+  const userMessages = DB.messages.filter(m => m.to.toLowerCase() === user.email.toLowerCase());
+  const totalMsgs = systemEmails.length + userMessages.length;
 
   viewport.innerHTML = `
     <div class="container section-padding">
@@ -1867,7 +1936,7 @@ function renderMyAccount() {
           <ul class="account-sidebar-menu">
             <li class="account-menu-item active" onclick="switchAccountTab('dashboard')"><i class="fa-solid fa-gauge"></i> Dashboard</li>
             <li class="account-menu-item" onclick="switchAccountTab('orders')"><i class="fa-solid fa-box"></i> Orders (${userOrders.length})</li>
-            <li class="account-menu-item" onclick="switchAccountTab('messages')"><i class="fa-solid fa-envelope"></i> Messages ${userMsgs.length > 0 ? `<span style="background:var(--accent-color);color:#0d0d0d;font-size:0.65rem;font-weight:700;padding:2px 7px;border-radius:20px;margin-left:6px;">${userMsgs.length}</span>` : ''}</li>
+            <li class="account-menu-item" onclick="switchAccountTab('messages')"><i class="fa-solid fa-envelope"></i> Messages ${totalMsgs > 0 ? `<span style="background:var(--accent-color);color:#0d0d0d;font-size:0.65rem;font-weight:700;padding:2px 7px;border-radius:20px;margin-left:6px;">${totalMsgs}</span>` : ''}</li>
             <li class="account-menu-item" onclick="switchAccountTab('addresses')"><i class="fa-solid fa-address-book"></i> Addresses</li>
             <li class="account-menu-item" onclick="logoutUser()" style="color:var(--sale-color); margin-top: 30px;"><i class="fa-solid fa-sign-out-alt"></i> Logout</li>
           </ul>
@@ -1934,27 +2003,38 @@ function switchAccountTab(tabName) {
   if (tabName === 'dashboard') {
     contentDiv.innerHTML = renderAccountDashboardTab(user, userOrders);
   } else if (tabName === 'messages') {
-    const msgs = STATE.sentEmails.filter(e => e.to.toLowerCase() === user.email.toLowerCase());
+    const systemEmails = STATE.sentEmails.filter(e => e.to.toLowerCase() === user.email.toLowerCase());
+    const userMessages = DB.messages.filter(m => m.to.toLowerCase() === user.email.toLowerCase());
+    const allMessages = [
+      ...systemEmails.map(e => ({ ...e, msgType: 'email', id: e.id || e.subject })),
+      ...userMessages
+    ].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    
     contentDiv.innerHTML = `
       <div class="checkout-section-block" style="margin-bottom:0;">
-        <h2 style="font-family:var(--font-heading); margin-bottom:20px;">My Messages</h2>
-        ${msgs.length === 0 ? `<p style="color:var(--grey-dark); font-size:0.9rem;">No messages yet. Confirm an order to receive email notifications here.</p>` : `
+        <h2 style="font-family:var(--font-heading); margin-bottom:20px;">My Messages & Notifications</h2>
+        <p style="color:var(--grey-dark); font-size:0.85rem; margin-bottom:15px;">Inbox (${allMessages.length} messages)</p>
+        ${allMessages.length === 0 ? `<p style="color:var(--grey-dark); font-size:0.9rem;">No messages yet. You'll see order updates and support messages here.</p>` : `
           <div style="display:flex; gap:16px; height:480px;">
-            <div style="width:240px; flex-shrink:0; border:1px solid var(--grey-light); border-radius:8px; overflow-y:auto;">
-              ${msgs.map((m, i) => `
-                <div onclick="renderAccountMessageBody(${i})" id="acct-msg-item-${i}" style="padding:12px 14px; border-bottom:1px solid var(--grey-light); cursor:pointer; transition:background 0.2s;" onmouseover="this.style.background='var(--bg-light)'" onmouseout="this.style.background=''">
+            <div style="width:280px; flex-shrink:0; border:1px solid var(--grey-light); border-radius:8px; overflow-y:auto; background:var(--bg-light);">
+              ${allMessages.map((m, i) => `
+                <div onclick="renderAccountMessageBody(${i})" id="acct-msg-item-${i}" style="padding:12px 14px; border-bottom:1px solid var(--grey-medium); cursor:pointer; transition:background 0.2s; ${!m.read ? 'font-weight:600;' : ''}" onmouseover="this.style.background='var(--grey-light)'" onmouseout="this.style.background='var(--bg-light)'">
+                  <div style="display:flex; align-items:center; gap:6px; margin-bottom:4px;">
+                    <span style="font-size:0.65rem; background:${m.type === 'support' || m.msgType === 'message' ? '#3b82f6' : '#10b981'}; color:#fff; padding:2px 6px; border-radius:3px; flex-shrink:0;">${m.type === 'support' || m.msgType === 'message' ? 'Support' : 'Order'}</span>
+                  </div>
                   <div style="font-size:0.8rem; font-weight:600; margin-bottom:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${m.subject}</div>
-                  <div style="font-size:0.72rem; color:var(--grey-dark);">${new Date(m.timestamp).toLocaleDateString()}</div>
+                  <div style="font-size:0.7rem; color:var(--grey-dark);">${new Date(m.timestamp).toLocaleDateString()}</div>
                 </div>
               `).join('')}
             </div>
-            <div id="acct-msg-body" style="flex:1; border:1px solid var(--grey-light); border-radius:8px; padding:20px; overflow-y:auto; font-size:0.88rem;">
+            <div id="acct-msg-body" style="flex:1; border:1px solid var(--grey-light); border-radius:8px; padding:20px; overflow-y:auto; font-size:0.88rem; background:#fff;">
               <p style="color:var(--grey-dark); text-align:center; margin-top:60px;"><i class="fa-solid fa-envelope-open" style="font-size:2rem; display:block; margin-bottom:12px;"></i>Select a message to read</p>
             </div>
           </div>
         `}
       </div>
     `;
+  
   } else if (tabName === 'orders') {
     contentDiv.innerHTML = `
       <div class="checkout-section-block" style="margin-bottom: 0;">
@@ -2025,19 +2105,42 @@ function switchAccountTab(tabName) {
 function renderAccountMessageBody(msgIdx) {
   const user = STATE.currentUser;
   if (!user) return;
-  const msgs = STATE.sentEmails.filter(e => e.to.toLowerCase() === user.email.toLowerCase());
-  const m = msgs[msgIdx];
+  
+  // Combine system emails and user messages
+  const systemEmails = STATE.sentEmails.filter(e => e.to.toLowerCase() === user.email.toLowerCase());
+  const userMessages = DB.messages.filter(m => m.to.toLowerCase() === user.email.toLowerCase());
+  const allMessages = [
+    ...systemEmails.map(e => ({ ...e, msgType: 'email', id: e.id || e.subject })),
+    ...userMessages
+  ].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  
+  const m = allMessages[msgIdx];
   if (!m) return;
+  
   const bodyEl = document.getElementById('acct-msg-body');
   if (!bodyEl) return;
+  
+  // Mark as read
+  if (m.type === 'support' && DB.messages.find(msg => msg.id === m.id)) {
+    const idx = DB.messages.findIndex(msg => msg.id === m.id);
+    if (idx >= 0) DB.messages[idx].read = true;
+    saveMessagesToLocalStorage();
+  }
+  
+  const fromAddr = m.from || (m.msgType === 'email' ? 'care@blue-aura-fashion.com' : 'Blue Aura Support');
+  const isUserMsg = m.type === 'support' || m.msgType === 'message';
+  
   bodyEl.innerHTML = `
     <div style="border-bottom:1px solid var(--grey-light); padding-bottom:12px; margin-bottom:16px; font-size:0.82rem; color:var(--grey-dark);">
       <strong>Subject:</strong> ${m.subject}<br>
       <strong>Date:</strong> ${new Date(m.timestamp).toLocaleString()}<br>
-      <strong>From:</strong> care@blue-aura-fashion.com
+      <strong>From:</strong> ${fromAddr}
+      <div style="margin-top:8px; padding-top:8px; border-top:1px solid var(--grey-light);">
+        <span style="display:inline-block; background:${isUserMsg ? '#3b82f6' : '#10b981'}; color:#fff; padding:3px 8px; border-radius:3px; font-size:0.75rem;">${isUserMsg ? '💬 Support Message' : '📦 Order Update'}</span>
+      </div>
     </div>
-    <div style="font-size:0.88rem; line-height:1.7;">${m.htmlContent}</div>
-    ${m.hasInvoiceAttachment ? `
+    <div style="font-size:0.88rem; line-height:1.7;">${m.htmlContent || m.body || 'No content'}</div>
+    ${m.hasInvoiceAttachment && m.msgType === 'email' ? `
       <div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--grey-light);">
         <button class="btn btn-secondary btn-sm" onclick="(function(){const o=DB.orders.find(x=>x.id==='${m.orderId}');if(o)generateInvoicePDF(o,true);})()">
           <i class="fa-solid fa-file-pdf"></i> Download Invoice PDF
@@ -3159,6 +3262,7 @@ function renderAdminDashboard() {
           <div class="admin-menu-link" data-admin-tab="products" onclick="switchAdminTab('products')"><i class="fa-solid fa-shirt"></i> Products</div>
           <div class="admin-menu-link" data-admin-tab="orders" onclick="switchAdminTab('orders')"><i class="fa-solid fa-list-check"></i> Orders</div>
           <div class="admin-menu-link" data-admin-tab="users" onclick="switchAdminTab('users')"><i class="fa-solid fa-users"></i> User Management</div>
+          <div class="admin-menu-link" data-admin-tab="messages" onclick="switchAdminTab('messages')"><i class="fa-solid fa-paper-plane"></i> Send Messages</div>
           <div class="admin-menu-link" data-admin-tab="banners" onclick="switchAdminTab('banners')"><i class="fa-solid fa-images"></i> Hero Banners</div>
           <div class="admin-menu-link" data-admin-tab="flashsale" onclick="switchAdminTab('flashsale')"><i class="fa-solid fa-bolt"></i> Flash Sale</div>
           <div class="admin-menu-link" data-admin-tab="offermgr" onclick="switchAdminTab('offermgr')"><i class="fa-solid fa-percent"></i> Offers Manager</div>
@@ -3288,6 +3392,7 @@ function switchAdminTab(tabName) {
   } else if (tabName === 'products')     { renderAdminProductsManager(contentMount); }
   else if (tabName === 'orders')         { renderAdminOrdersManager(contentMount); }
   else if (tabName === 'users')          { renderAdminUsers(contentMount); }
+  else if (tabName === 'messages')       { renderAdminSendMessages(contentMount); }
   else if (tabName === 'banners')        { renderAdminBanners(contentMount); }
   else if (tabName === 'flashsale')      { renderAdminFlashSale(contentMount); }
   else if (tabName === 'offermgr')       { renderAdminOfferManager(contentMount); }
@@ -4187,6 +4292,119 @@ function adminExportUsersCSV() {
   a.download = 'blue_aura_customers.csv';
   a.click();
   showToast('Customer list exported as CSV.');
+}
+
+// ADMIN SEND MESSAGES TAB
+function renderAdminSendMessages(mount) {
+  const allEmails = Array.from(new Set(DB.users.map(u => u.email)));
+  
+  mount.innerHTML = `
+    <div class="admin-panel-card">
+      <div class="admin-card-header">
+        <h3 class="admin-card-title">Send Messages to Users</h3>
+        <p style="color:var(--grey-dark); font-size:0.85rem; margin-top:4px;">Send custom support messages that will appear in user accounts and be emailed to them automatically.</p>
+      </div>
+      
+      <form class="form-grid" onsubmit="adminSendMessage(event)" style="max-width:600px;">
+        <div class="form-field form-group-full">
+          <label for="msg-recipient">Recipient Email</label>
+          <select id="msg-recipient" required>
+            <option value="">-- Select a user --</option>
+            ${allEmails.map(email => `<option value="${email}">${email}</option>`).join('')}
+            <optgroup label="Or type custom email:">
+              <option value="custom">Use custom email...</option>
+            </optgroup>
+          </select>
+        </div>
+        <div class="form-field form-group-full" id="msg-custom-email-wrapper" style="display:none;">
+          <label for="msg-custom-email">Custom Email Address</label>
+          <input type="email" id="msg-custom-email" placeholder="user@example.com">
+        </div>
+        <div class="form-field form-group-full">
+          <label for="msg-subject">Message Subject</label>
+          <input type="text" id="msg-subject" placeholder="e.g., Your Order Update" required>
+        </div>
+        <div class="form-field form-group-full">
+          <label for="msg-body">Message Body</label>
+          <textarea id="msg-body" rows="6" placeholder="Enter your message..." required style="font-family: monospace; font-size: 0.9rem;"></textarea>
+        </div>
+        <div class="form-group-full" style="text-align:right; margin-top:15px;">
+          <button type="submit" class="btn btn-primary"><i class="fa-solid fa-paper-plane"></i> Send Message & Email</button>
+        </div>
+      </form>
+      
+      <div style="margin-top:40px; padding-top:30px; border-top:1px solid var(--grey-light);">
+        <h3 style="font-size:1rem; margin-bottom:15px; font-weight:600;">Recent Messages Sent</h3>
+        <div style="max-height:300px; overflow-y:auto;">
+          ${DB.messages.length === 0 ? `<p style="color:var(--grey-dark); font-size:0.9rem;">No messages sent yet.</p>` : `
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>To</th>
+                  <th>Subject</th>
+                  <th>Sent At</th>
+                  <th>Read</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${DB.messages.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 10).map(msg => `
+                  <tr>
+                    <td style="font-size:0.85rem;">${msg.to}</td>
+                    <td style="font-size:0.85rem; max-width:200px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${msg.subject}</td>
+                    <td style="font-size:0.8rem; color:var(--grey-dark);">${new Date(msg.timestamp).toLocaleDateString()}</td>
+                    <td>${msg.read ? '✓' : '○'}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          `}
+        </div>
+      </div>
+    </div>
+  `;
+  
+  // Handle custom email selection
+  const recipientSelect = document.getElementById('msg-recipient');
+  const customWrapper = document.getElementById('msg-custom-email-wrapper');
+  if (recipientSelect) {
+    recipientSelect.addEventListener('change', () => {
+      if (customWrapper) customWrapper.style.display = recipientSelect.value === 'custom' ? 'block' : 'none';
+    });
+  }
+}
+
+function adminSendMessage(e) {
+  e.preventDefault();
+  
+  const recipientSelect = document.getElementById('msg-recipient').value;
+  const customEmail = document.getElementById('msg-custom-email').value;
+  const to = recipientSelect === 'custom' ? customEmail : recipientSelect;
+  const subject = document.getElementById('msg-subject').value.trim();
+  const body = document.getElementById('msg-body').value.trim();
+  
+  if (!to || !subject || !body) {
+    showToast('Please fill in all fields.');
+    return;
+  }
+  
+  if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(to)) {
+    showToast('Invalid email address.');
+    return;
+  }
+  
+  // Send message (calls backend for Gmail)
+  sendMessageToUser(to, subject, body, 'Blue Aura Support')
+    .then(() => {
+      showToast(`Message sent to ${to} and email dispatched!`);
+      document.getElementById('msg-subject').value = '';
+      document.getElementById('msg-body').value = '';
+      document.getElementById('msg-custom-email').value = '';
+      document.getElementById('msg-recipient').value = '';
+      switchAdminTab('messages');
+    })
+    .catch(err => {
+      showToast('Failed to send message: ' + err.message);
+    });
 }
 
 // PROMO CODES ADMIN TAB
