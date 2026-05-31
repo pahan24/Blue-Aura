@@ -2241,7 +2241,7 @@ function renderCheckout() {
   let discount = 0;
   
   if (STATE.activePromo) {
-    discount = subtotal * STATE.activePromo.discount;
+    discount = calculatePromoDiscount(subtotal);
   }
   
   const grandTotal = subtotal + shippingTotal - discount;
@@ -2390,9 +2390,14 @@ function applyPromoCode() {
     return;
   }
 
-  const rate = DB.settings.promoCodes[code];
-  if (rate !== undefined) {
-    STATE.activePromo = { code: code, discount: rate };
+  const promoDef = DB.settings.promoCodes[code];
+  if (promoDef !== undefined) {
+    if (typeof promoDef === 'number') {
+      STATE.activePromo = { code: code, discount: promoDef, appliesTo: { type: 'all' } };
+    } else {
+      // assume object
+      STATE.activePromo = Object.assign({ code: code }, promoDef);
+    }
     showToast(`Promo code '${code}' applied successfully!`);
     renderCheckout();
   } else {
@@ -2417,7 +2422,7 @@ async function handlePlaceOrder(e) {
   const shippingTotal = calculateShippingTotal();
   let discount = 0;
   if (STATE.activePromo) {
-    discount = subtotal * STATE.activePromo.discount;
+    discount = calculatePromoDiscount(subtotal);
   }
   const grandTotal = subtotal + shippingTotal - discount;
 
@@ -2996,6 +3001,37 @@ function calculateShippingTotal() {
     const p = DB.products.find(x => x.id === item.productId);
     return sum + (p ? p.shippingFee * item.quantity : 0);
   }, 0);
+}
+
+// Calculate promo discount based on active promo rules
+function calculatePromoDiscount(subtotal) {
+  if (!STATE.activePromo) return 0;
+  const promo = STATE.activePromo;
+  const rate = promo.discount || 0;
+
+  // If promo applies to all, simple percentage of subtotal
+  if (!promo.appliesTo || promo.appliesTo.type === 'all') {
+    return subtotal * rate;
+  }
+
+  // Otherwise, compute discount only for eligible cart items
+  let eligibleSum = 0;
+  for (const item of STATE.cart) {
+    const prod = DB.products.find(p => p.id === item.productId);
+    if (!prod) continue;
+
+    if (promo.appliesTo.type === 'products' && Array.isArray(promo.appliesTo.ids)) {
+      if (promo.appliesTo.ids.includes(prod.id)) {
+        eligibleSum += prod.price * item.quantity;
+      }
+    } else if (promo.appliesTo.type === 'category' && promo.appliesTo.category) {
+      if (prod.category && prod.category.toLowerCase() === promo.appliesTo.category.toLowerCase()) {
+        eligibleSum += prod.price * item.quantity;
+      }
+    }
+  }
+
+  return eligibleSum * rate;
 }
 
 // Cart Drawer open/close
@@ -4190,6 +4226,22 @@ function renderAdminPromos(mount) {
           <label for="promo-discount-input">Discount (0.10 = 10%, 1.00 = Free Shipping)</label>
           <input type="number" id="promo-discount-input" step="0.01" min="0.01" max="1.00" placeholder="0.10" required>
         </div>
+        <div class="form-field">
+          <label for="promo-type-select">Applies To</label>
+          <select id="promo-type-select">
+            <option value="all">All Products</option>
+            <option value="products">Specific Products (IDs)</option>
+            <option value="category">Product Category</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label for="promo-products-input">Product IDs (comma separated, when 'Specific Products' chosen)</label>
+          <input type="text" id="promo-products-input" placeholder="e.g. 1,2,34">
+        </div>
+        <div class="form-field">
+          <label for="promo-category-input">Category Name (when 'Product Category' chosen)</label>
+          <input type="text" id="promo-category-input" placeholder="e.g. Women">
+        </div>
         <div class="form-group-full" style="text-align:right; margin-top:10px;">
           <button type="submit" class="btn btn-primary" style="width:100%;"><i class="fa-solid fa-plus"></i> Add Promo Code</button>
         </div>
@@ -4200,26 +4252,51 @@ function renderAdminPromos(mount) {
 
 function renderPromoRows(entries) {
   if (entries.length === 0) return `<tr><td colspan="4" style="text-align:center; color:var(--grey-dark);">No promo codes defined.</td></tr>`;
-  return entries.map(([code, val]) => `
+  return entries.map(([code, val]) => {
+    let discountText = '';
+    let typeText = 'All Products';
+    if (typeof val === 'number') {
+      discountText = val === 1.0 ? '100% (Free Shipping)' : (val * 100).toFixed(0) + '% off';
+    } else if (typeof val === 'object') {
+      discountText = val.discount === 1.0 ? '100% (Free Shipping)' : (val.discount * 100).toFixed(0) + '% off';
+      if (val.appliesTo) {
+        if (val.appliesTo.type === 'products') typeText = `Products: ${Array.isArray(val.appliesTo.ids) ? val.appliesTo.ids.join(',') : ''}`;
+        else if (val.appliesTo.type === 'category') typeText = `Category: ${val.appliesTo.category}`;
+      }
+    }
+
+    return `
     <tr>
       <td><strong style="font-family:monospace; font-size:1rem; color:var(--primary-color);">${code}</strong></td>
-      <td>${val === 1.0 ? '100% (Free Shipping)' : (val * 100).toFixed(0) + '% off'}</td>
-      <td><span class="badge-status confirmed">Active</span></td>
+      <td>${discountText}</td>
+      <td><span class="badge-status confirmed">${typeText}</span></td>
       <td>
         <button class="btn btn-sm" style="background:var(--danger-color,#ef4444); color:#fff; border:none; border-radius:6px; padding:5px 12px; cursor:pointer;" onclick="adminDeletePromo('${code}')">
           <i class="fa-solid fa-trash"></i> Remove
         </button>
       </td>
     </tr>
-  `).join('');
+  `}).join('');
 }
 
 function adminAddPromoCode(e) {
   e.preventDefault();
   const code = document.getElementById('promo-code-input').value.trim().toUpperCase();
   const discount = parseFloat(document.getElementById('promo-discount-input').value);
+  const type = document.getElementById('promo-type-select') ? document.getElementById('promo-type-select').value : 'all';
+  const prodIdsRaw = document.getElementById('promo-products-input') ? document.getElementById('promo-products-input').value.trim() : '';
+  const categoryRaw = document.getElementById('promo-category-input') ? document.getElementById('promo-category-input').value.trim() : '';
   if (!code || isNaN(discount)) return;
-  DB.settings.promoCodes[code] = discount;
+  if (type === 'all') {
+    DB.settings.promoCodes[code] = discount;
+  } else if (type === 'products') {
+    const ids = prodIdsRaw.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+    DB.settings.promoCodes[code] = { discount: discount, appliesTo: { type: 'products', ids: ids } };
+  } else if (type === 'category') {
+    DB.settings.promoCodes[code] = { discount: discount, appliesTo: { type: 'category', category: categoryRaw } };
+  } else {
+    DB.settings.promoCodes[code] = discount;
+  }
   localStorage.setItem('blue_aura_settings', JSON.stringify(DB.settings));
   showToast(`Promo code ${code} added successfully!`);
   switchAdminTab('promos');
