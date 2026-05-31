@@ -74,6 +74,33 @@ const STATE = {
   liveBackendUrl: "http://localhost:5000"
 };
 
+// Firebase configuration: replace with your Firebase Web App settings
+const FIREBASE_CONFIG = {
+  apiKey: "YOUR_FIREBASE_API_KEY",
+  authDomain: "YOUR_FIREBASE_AUTH_DOMAIN",
+  projectId: "YOUR_FIREBASE_PROJECT_ID",
+  storageBucket: "YOUR_FIREBASE_STORAGE_BUCKET",
+  messagingSenderId: "YOUR_FIREBASE_MESSAGING_SENDER_ID",
+  appId: "YOUR_FIREBASE_APP_ID"
+};
+
+let firebaseAuthInitialized = false;
+
+function initFirebaseAuth() {
+  if (!window.firebase || !window.firebase.initializeApp) {
+    logToTerminal('[Firebase] Firebase SDK not loaded. Google login will fall back to prompt mode.');
+    return;
+  }
+
+  try {
+    firebase.initializeApp(FIREBASE_CONFIG);
+    firebaseAuthInitialized = true;
+    logToTerminal('[Firebase] Firebase initialized successfully. Google authentication is ready.');
+  } catch (err) {
+    logToTerminal('[Firebase] Failed to initialize Firebase: ' + err.message);
+  }
+}
+
 // Initial fashion products data
 const INITIAL_PRODUCTS = [
   {
@@ -1458,8 +1485,8 @@ function renderLoginView() {
       <div class="auth-container">
         <h1 class="auth-title">Log In</h1>
         
-        <!-- Google Login Integration (Simulated API script callback hooks) -->
-        <button class="social-login-btn" onclick="triggerGoogleLoginSim()">
+        <!-- Google Login Integration -->
+        <button class="social-login-btn" onclick="triggerGoogleLogin()">
           <img src="https://upload.wikimedia.org/wikipedia/commons/5/53/Google_%22G%22_Logo.svg" style="width:16px;" alt="Google">
           <span>Continue with Google</span>
         </button>
@@ -1495,7 +1522,7 @@ function renderRegisterView() {
       <div class="auth-container">
         <h1 class="auth-title">Register Account</h1>
         
-        <button class="social-login-btn" onclick="triggerGoogleLoginSim()">
+        <button class="social-login-btn" onclick="triggerGoogleLogin()">
           <img src="https://upload.wikimedia.org/wikipedia/commons/5/53/Google_%22G%22_Logo.svg" style="width:16px;" alt="Google">
           <span>Sign up with Google</span>
         </button>
@@ -1531,8 +1558,54 @@ function renderRegisterView() {
 }
 
 // Simulated Auth Handlers
+function triggerGoogleLogin() {
+  if (firebaseAuthInitialized && window.firebase && window.firebase.auth) {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    showToast("Signing in with Google...");
+
+    firebase.auth().signInWithPopup(provider)
+      .then((result) => {
+        const profile = result.user;
+        const mockGoogleUser = {
+          email: profile.email,
+          firstName: profile.displayName ? profile.displayName.split(' ')[0] : 'Google',
+          lastName: profile.displayName ? profile.displayName.split(' ').slice(1).join(' ') : 'User',
+          picture: profile.photoURL || "https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=150&auto=format&fit=crop",
+          provider: "google"
+        };
+
+        STATE.currentUser = mockGoogleUser;
+        sessionStorage.setItem("blue_aura_user", JSON.stringify(mockGoogleUser));
+
+        const exists = DB.users.find(u => u.email.toLowerCase() === mockGoogleUser.email.toLowerCase());
+        if (!exists) {
+          DB.users.push({
+            email: mockGoogleUser.email,
+            firstName: mockGoogleUser.firstName,
+            lastName: mockGoogleUser.lastName,
+            dateJoined: new Date().toISOString(),
+            provider: "google"
+          });
+          saveUsersToLocalStorage();
+        }
+
+        triggerSMTPLoginAlert(mockGoogleUser);
+        logToTerminal(`[Firebase Google] Signed in as ${mockGoogleUser.email}`);
+        showToast(`Welcome back, ${mockGoogleUser.firstName}!`);
+        window.location.hash = "account";
+      })
+      .catch((err) => {
+        logToTerminal(`[Firebase Google] Login failed: ${err.message}`);
+        showToast("Google login failed. Please try again.");
+      });
+  } else {
+    logToTerminal("[Google Login] Firebase not ready; falling back to simulated prompt.");
+    triggerGoogleLoginSim();
+  }
+}
+
 function triggerGoogleLoginSim() {
-  logToTerminal("[Google OAuth] Launching Identity Services API consent overlay...");
+  logToTerminal("[Google OAuth] Launching fallback sign-in prompt...");
   showToast("Opening Google Account selector...");
   
   setTimeout(() => {
@@ -1557,7 +1630,6 @@ function triggerGoogleLoginSim() {
     STATE.currentUser = mockGoogleUser;
     sessionStorage.setItem("blue_aura_user", JSON.stringify(mockGoogleUser));
     
-    // Register user in list if new
     const exists = DB.users.find(u => u.email.toLowerCase() === mockGoogleUser.email.toLowerCase());
     if (!exists) {
       DB.users.push({
@@ -1570,13 +1642,10 @@ function triggerGoogleLoginSim() {
       saveUsersToLocalStorage();
     }
     
-    // Send email alert
     triggerSMTPLoginAlert(mockGoogleUser);
     
-    logToTerminal(`[Google OAuth] Handshake successful. Token generated for ${mockGoogleUser.email}`);
+    logToTerminal(`[Google OAuth] Fallback sign-in successful for ${mockGoogleUser.email}`);
     showToast(`Welcome, ${mockGoogleUser.firstName}! Logged in with Google.`);
-    
-    // Redirect to account dashboard
     window.location.hash = "account";
   }, 1200);
 }
@@ -4623,6 +4692,7 @@ function hideLoadingOverlay() {
 window.addEventListener("DOMContentLoaded", () => {
   setTimeout(hideLoadingOverlay, 600);
   initDB();
+  initFirebaseAuth();
   router();
 });
 
