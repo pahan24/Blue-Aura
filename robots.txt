@@ -1,0 +1,16 @@
+# Robots.txt for Blue Aura (Premium Shopify Store)
+User-agent: *
+Disallow: /admin
+Disallow: /cart
+Disallow: /checkout
+Disallow: /checkouts/
+Disallow: /orders
+Disallow: /account
+Disallow: /search
+
+# Allow product and category indexing
+Allow: /products/*
+Allow: /collections/*
+Allow: /pages/*
+
+Sitemap: https://blue-aura-fashion.com/sitemap.xml
