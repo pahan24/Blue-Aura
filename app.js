@@ -1464,23 +1464,23 @@ function renderLoginView() {
           <span>Continue with Google</span>
         </button>
         
-        <div class="auth-separator">or login with email</div>
+        <div class="auth-separator">or login with email / username</div>
         
         <form class="form-grid" onsubmit="handleEmailLogin(event)">
           <div class="form-field form-group-full">
-            <label for="l-email">Email Address</label>
-            <input type="email" id="l-email" required>
+            <label for="l-email">Email or Username</label>
+            <input type="text" id="l-email" placeholder="Email address or username" required>
           </div>
           <div class="form-field form-group-full">
-            <div style="display:flex; justify-content:space-between;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:10px;">
               <label for="l-pass">Password</label>
               <a href="#" onclick="triggerForgotPassword(event)" style="font-size:0.75rem; text-decoration:underline;">Forgot Password?</a>
             </div>
-            <input type="password" id="l-pass" required>
+            <input type="password" id="l-pass" required placeholder="Secure password">
           </div>
           <button type="submit" class="btn btn-primary form-group-full" style="margin-top:10px;">Log In</button>
         </form>
-        
+        <p style="margin-top:18px; font-size:0.82rem; color: var(--grey-dark); text-align:center;">Admin access: <strong>blueaura</strong> / <strong>ba123</strong></p>
         <div class="auth-switch">
           Don't have an account? <a href="#" onclick="event.preventDefault(); renderRegisterView();">Create Account</a>
         </div>
@@ -1536,10 +1536,20 @@ function triggerGoogleLoginSim() {
   showToast("Opening Google Account selector...");
   
   setTimeout(() => {
+    const emailInput = prompt("Enter your Google email to continue:", "jane.doe@gmail.com");
+    if (!emailInput) {
+      showToast("Google sign-in cancelled.");
+      return;
+    }
+
+    const email = emailInput.trim().toLowerCase();
+    const firstName = email.split('@')[0].split('.')[0].replace(/[^a-zA-Z]/g, '');
+    const lastName = email.split('@')[0].split('.')[1] || 'User';
+
     const mockGoogleUser = {
-      email: "jane.doe@gmail.com",
-      firstName: "Jane",
-      lastName: "Doe",
+      email: email,
+      firstName: firstName.charAt(0).toUpperCase() + firstName.slice(1) || 'Google',
+      lastName: lastName.charAt(0).toUpperCase() + lastName.slice(1) || 'User',
       picture: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?q=80&w=150&auto=format&fit=crop",
       provider: "google"
     };
@@ -1564,7 +1574,7 @@ function triggerGoogleLoginSim() {
     triggerSMTPLoginAlert(mockGoogleUser);
     
     logToTerminal(`[Google OAuth] Handshake successful. Token generated for ${mockGoogleUser.email}`);
-    showToast("Logged in successfully with Google!");
+    showToast(`Welcome, ${mockGoogleUser.firstName}! Logged in with Google.`);
     
     // Redirect to account dashboard
     window.location.hash = "account";
@@ -1573,13 +1583,23 @@ function triggerGoogleLoginSim() {
 
 function handleEmailLogin(e) {
   e.preventDefault();
-  const email = document.getElementById("l-email").value.trim();
+  const loginValue = document.getElementById("l-email").value.trim();
   const pass = document.getElementById("l-pass").value;
+  const normalized = loginValue.toLowerCase();
+
+  // Admin credentials route from the same login panel
+  if (normalized === "blueaura" && pass === "ba123") {
+    sessionStorage.setItem("admin_authenticated", "true");
+    logToTerminal("[Admin Security] Admin login successful from main login panel.");
+    showToast("Admin access granted. Redirecting to dashboard...");
+    window.location.hash = "admin";
+    return;
+  }
 
   const mockUser = {
-    email: email,
-    firstName: email.split("@")[0],
-    lastName: "User",
+    email: normalized.includes("@") ? normalized : `${normalized}@blueaura.com`,
+    firstName: normalized.includes("@") ? normalized.split("@")[0] : normalized,
+    lastName: "Member",
     picture: "",
     provider: "email"
   };
@@ -1603,8 +1623,8 @@ function handleEmailLogin(e) {
   // Send email alert
   triggerSMTPLoginAlert(mockUser);
   
-  logToTerminal(`[Auth System] User logged in: ${email}`);
-  showToast("Welcome back! Login successful.");
+  logToTerminal(`[Auth System] User logged in: ${mockUser.email}`);
+  showToast(`Welcome back, ${mockUser.firstName}!`);
   window.location.hash = "account";
 }
 
@@ -1642,7 +1662,7 @@ function handleEmailRegister(e) {
   triggerSMTPLoginAlert(mockUser);
   
   logToTerminal(`[Auth System] User registered: ${email}`);
-  showToast("Account created successfully!");
+  showToast(`Welcome to Blue Aura, ${mockUser.firstName}! Your account is ready.`);
   window.location.hash = "account";
 }
 
@@ -2281,7 +2301,7 @@ async function handlePlaceOrder(e) {
   // Trigger SMTP Order placed Simulation immediately
   triggerSMTPOrederAlert(newOrder, "placed");
 
-  showToast("Thank you! Order placed successfully.");
+  showToast(`Thank you, ${STATE.currentUser ? STATE.currentUser.firstName : 'valued customer'}! Order ${orderId} has been placed successfully.`);
   
   // Navigate to tracking page
   window.location.hash = `tracking/${orderId}`;
