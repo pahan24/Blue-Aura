@@ -3012,18 +3012,19 @@ function renderAdminDashboard() {
       <div class="admin-layout">
         <!-- Sidebar -->
         <aside class="admin-sidebar">
-          <div class="admin-menu-link active" onclick="switchAdminTab('dashboard')"><i class="fa-solid fa-chart-line"></i> Dashboard</div>
-          <div class="admin-menu-link" onclick="switchAdminTab('products')"><i class="fa-solid fa-shirt"></i> Products</div>
-          <div class="admin-menu-link" onclick="switchAdminTab('orders')"><i class="fa-solid fa-list-check"></i> Orders</div>
-          <div class="admin-menu-link" onclick="switchAdminTab('users')"><i class="fa-solid fa-users"></i> User Management</div>
-          <div class="admin-menu-link" onclick="switchAdminTab('banners')"><i class="fa-solid fa-images"></i> Hero Banners</div>
-          <div class="admin-menu-link" onclick="switchAdminTab('flashsale')"><i class="fa-solid fa-bolt"></i> Flash Sale</div>
-          <div class="admin-menu-link" onclick="switchAdminTab('offermgr')"><i class="fa-solid fa-percent"></i> Offers Manager</div>
-          <div class="admin-menu-link" onclick="switchAdminTab('promos')"><i class="fa-solid fa-tags"></i> Promo Codes</div>
-          <div class="admin-menu-link" onclick="switchAdminTab('reports')"><i class="fa-solid fa-chart-bar"></i> Monthly Reports</div>
-          <div class="admin-menu-link" onclick="switchAdminTab('maillogs')"><i class="fa-solid fa-envelope-open-text"></i> Mail Logs</div>
-          <div class="admin-menu-link" onclick="switchAdminTab('announcement')"><i class="fa-solid fa-bullhorn"></i> Announcement Bar</div>
-          <div class="admin-menu-link" onclick="switchAdminTab('settings')"><i class="fa-solid fa-sliders"></i> Store Settings</div>
+          <div class="admin-menu-link active" data-admin-tab="dashboard" onclick="switchAdminTab('dashboard')"><i class="fa-solid fa-chart-line"></i> Dashboard</div>
+          <div class="admin-menu-link" data-admin-tab="products" onclick="switchAdminTab('products')"><i class="fa-solid fa-shirt"></i> Products</div>
+          <div class="admin-menu-link" data-admin-tab="orders" onclick="switchAdminTab('orders')"><i class="fa-solid fa-list-check"></i> Orders</div>
+          <div class="admin-menu-link" data-admin-tab="users" onclick="switchAdminTab('users')"><i class="fa-solid fa-users"></i> User Management</div>
+          <div class="admin-menu-link" data-admin-tab="banners" onclick="switchAdminTab('banners')"><i class="fa-solid fa-images"></i> Hero Banners</div>
+          <div class="admin-menu-link" data-admin-tab="flashsale" onclick="switchAdminTab('flashsale')"><i class="fa-solid fa-bolt"></i> Flash Sale</div>
+          <div class="admin-menu-link" data-admin-tab="offermgr" onclick="switchAdminTab('offermgr')"><i class="fa-solid fa-percent"></i> Offers Manager</div>
+          <div class="admin-menu-link" data-admin-tab="promos" onclick="switchAdminTab('promos')"><i class="fa-solid fa-tags"></i> Promo Codes</div>
+          <div class="admin-menu-link" data-admin-tab="reports" onclick="switchAdminTab('reports')"><i class="fa-solid fa-chart-bar"></i> Monthly Reports</div>
+          <div class="admin-menu-link" data-admin-tab="maillogs" onclick="switchAdminTab('maillogs')"><i class="fa-solid fa-envelope-open-text"></i> Mail Logs</div>
+          <div class="admin-menu-link" data-admin-tab="announcement" onclick="switchAdminTab('announcement')"><i class="fa-solid fa-bullhorn"></i> Announcement Bar</div>
+          <div class="admin-menu-link" data-admin-tab="settings" onclick="switchAdminTab('settings')"><i class="fa-solid fa-sliders"></i> Store Settings</div>
+          <div class="admin-menu-link logout" onclick="adminLogout()"><i class="fa-solid fa-right-from-bracket"></i> Logout</div>
         </aside>
         
         <!-- Main Panel Content -->
@@ -3134,14 +3135,8 @@ function switchAdminTab(tabName) {
   if (!contentMount) return;
 
   links.forEach(lnk => {
-    const text = lnk.innerText.toLowerCase().trim();
-    const map = {
-      dashboard: 'dashboard', products: 'products', orders: 'orders',
-      users: 'user management', banners: 'hero banners', flashsale: 'flash sale',
-      offermgr: 'offers manager', promos: 'promo codes', reports: 'monthly reports',
-      maillogs: 'mail logs', announcement: 'announcement bar', settings: 'store settings'
-    };
-    lnk.classList.toggle('active', text === (map[tabName] || tabName));
+    const tab = lnk.dataset.adminTab;
+    lnk.classList.toggle('active', tab === tabName);
   });
 
   if (tabName === 'dashboard') {
@@ -3158,6 +3153,12 @@ function switchAdminTab(tabName) {
   else if (tabName === 'maillogs')       { renderAdminMailLogs(contentMount); }
   else if (tabName === 'announcement')   { renderAdminAnnouncement(contentMount); }
   else if (tabName === 'settings')       { renderAdminSettings(contentMount); }
+}
+
+function adminLogout() {
+  sessionStorage.removeItem('admin_authenticated');
+  showToast('Admin session ended. Redirecting to login...');
+  window.location.hash = 'admin-login';
 }
 
 // PRODUCTS MANAGER ADMIN TAB
@@ -4126,6 +4127,249 @@ function adminDeletePromo(code) {
 }
 
 // SETTINGS ADMIN TAB
+function renderAdminFlashSale(mount) {
+  const flash = DB.settings.flashSale || {};
+  mount.innerHTML = `
+    <div class="admin-panel-card" style="max-width:700px;">
+      <div class="admin-card-header">
+        <h3 class="admin-card-title">Flash Sale Manager</h3>
+      </div>
+      <form class="form-grid" onsubmit="saveAdminFlashSale(event)">
+        <div class="form-field">
+          <label for="fs-enabled">Enable Flash Sale</label>
+          <select id="fs-enabled">
+            <option value="true" ${flash.enabled ? 'selected' : ''}>Enabled</option>
+            <option value="false" ${!flash.enabled ? 'selected' : ''}>Disabled</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label for="fs-title">Flash Sale Title</label>
+          <input type="text" id="fs-title" value="${flash.title || ''}" required>
+        </div>
+        <div class="form-field form-group-full">
+          <label for="fs-description">Flash Sale Description</label>
+          <textarea id="fs-description" rows="3" required>${flash.description || ''}</textarea>
+        </div>
+        <div class="form-field">
+          <label for="fs-link">Link Target</label>
+          <input type="text" id="fs-link" value="${flash.link || '#offers'}" required>
+        </div>
+        <div class="form-field">
+          <label for="fs-linkText">Button Text</label>
+          <input type="text" id="fs-linkText" value="${flash.linkText || 'Shop Flash Sale'}" required>
+        </div>
+        <div class="form-field form-group-full">
+          <label for="fs-endTime">End Date / Time</label>
+          <input type="datetime-local" id="fs-endTime" value="${flash.endTime ? new Date(flash.endTime).toISOString().slice(0,16) : ''}" required>
+        </div>
+        <div class="form-group-full" style="text-align:right; margin-top:10px;">
+          <button type="submit" class="btn btn-primary" style="width:100%;">Save Flash Sale Settings</button>
+        </div>
+      </form>
+    </div>
+  `;
+}
+
+function saveAdminFlashSale(e) {
+  e.preventDefault();
+  DB.settings.flashSale = {
+    enabled: document.getElementById('fs-enabled').value === 'true',
+    title: document.getElementById('fs-title').value.trim(),
+    description: document.getElementById('fs-description').value.trim(),
+    link: document.getElementById('fs-link').value.trim(),
+    linkText: document.getElementById('fs-linkText').value.trim(),
+    endTime: new Date(document.getElementById('fs-endTime').value).toISOString()
+  };
+  localStorage.setItem('blue_aura_settings', JSON.stringify(DB.settings));
+  showToast('Flash sale updated successfully.');
+  switchAdminTab('flashsale');
+}
+
+function renderAdminOfferManager(mount) {
+  const offers = DB.settings.offers || [];
+  mount.innerHTML = `
+    <div class="admin-panel-card" style="max-width:900px;">
+      <div class="admin-card-header">
+        <h3 class="admin-card-title">Offers Manager</h3>
+      </div>
+      <table class="admin-table" style="margin-bottom:20px;">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Title</th>
+            <th>Badge</th>
+            <th>Description</th>
+            <th>Active</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${offers.map((offer, idx) => `
+            <tr>
+              <td>${idx + 1}</td>
+              <td>${offer.title}</td>
+              <td>${offer.badge}</td>
+              <td>${offer.description}</td>
+              <td>${offer.active ? '<span class="badge-status confirmed">Active</span>' : '<span class="badge-status cancelled">Inactive</span>'}</td>
+              <td>
+                <button class="btn btn-secondary btn-sm" onclick="adminToggleOfferActive(${idx})">${offer.active ? 'Disable' : 'Enable'}</button>
+                <button class="btn btn-secondary btn-sm" style="background:var(--danger-color,#ef4444); color:#fff;" onclick="adminDeleteOffer(${idx})">Delete</button>
+              </td>
+            </tr>
+          `).join('')}
+          ${offers.length === 0 ? '<tr><td colspan="6" style="text-align:center;color:var(--grey-dark);">No offers defined yet.</td></tr>' : ''}
+        </tbody>
+      </table>
+      <form class="form-grid" onsubmit="adminAddOffer(event)">
+        <div class="form-field">
+          <label for="offer-title">Offer Title</label>
+          <input id="offer-title" required>
+        </div>
+        <div class="form-field">
+          <label for="offer-badge">Badge Text</label>
+          <input id="offer-badge" required>
+        </div>
+        <div class="form-field form-group-full">
+          <label for="offer-description">Offer Description</label>
+          <textarea id="offer-description" rows="3" required></textarea>
+        </div>
+        <div class="form-field">
+          <label for="offer-active">Active Status</label>
+          <select id="offer-active">
+            <option value="true">Active</option>
+            <option value="false">Inactive</option>
+          </select>
+        </div>
+        <div class="form-group-full" style="text-align:right;">
+          <button type="submit" class="btn btn-primary" style="width:100%;">Add Offer</button>
+        </div>
+      </form>
+    </div>
+  `;
+}
+
+function adminAddOffer(e) {
+  e.preventDefault();
+  const title = document.getElementById('offer-title').value.trim();
+  const badge = document.getElementById('offer-badge').value.trim();
+  const description = document.getElementById('offer-description').value.trim();
+  const active = document.getElementById('offer-active').value === 'true';
+  if (!title || !badge || !description) return;
+  DB.settings.offers = DB.settings.offers || [];
+  DB.settings.offers.push({ id: Date.now(), title, badge, description, active });
+  localStorage.setItem('blue_aura_settings', JSON.stringify(DB.settings));
+  showToast('New offer saved.');
+  switchAdminTab('offermgr');
+}
+
+function adminToggleOfferActive(idx) {
+  if (!DB.settings.offers || !DB.settings.offers[idx]) return;
+  DB.settings.offers[idx].active = !DB.settings.offers[idx].active;
+  localStorage.setItem('blue_aura_settings', JSON.stringify(DB.settings));
+  switchAdminTab('offermgr');
+}
+
+function adminDeleteOffer(idx) {
+  if (!DB.settings.offers || !DB.settings.offers[idx]) return;
+  if (!confirm('Remove this offer permanently?')) return;
+  DB.settings.offers.splice(idx, 1);
+  localStorage.setItem('blue_aura_settings', JSON.stringify(DB.settings));
+  showToast('Offer deleted.');
+  switchAdminTab('offermgr');
+}
+
+function renderAdminReports(mount) {
+  const orderCounts = {
+    placed: DB.orders.filter(o => o.status === 'pending').length,
+    confirmed: DB.orders.filter(o => o.status === 'confirmed').length,
+    shipped: DB.orders.filter(o => o.status === 'shipped').length,
+    delivered: DB.orders.filter(o => o.status === 'delivered').length,
+    cancelled: DB.orders.filter(o => o.status === 'cancelled').length
+  };
+  const totalRevenue = DB.orders.filter(o => o.status !== 'cancelled').reduce((sum,o) => sum + o.total, 0);
+  const topCustomers = DB.users
+    .map(u => {
+      const userOrders = DB.orders.filter(o => o.email === u.email);
+      return { ...u, spend: userOrders.reduce((s,o) => s + o.total, 0), orders: userOrders.length };
+    })
+    .sort((a,b) => b.spend - a.spend)
+    .slice(0, 5);
+
+  mount.innerHTML = `
+    <div class="admin-panel-card" style="max-width:920px;">
+      <div class="admin-card-header">
+        <h3 class="admin-card-title">Store Reports</h3>
+      </div>
+      <div style="display:grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap:18px; margin-bottom:22px;">
+        <div class="admin-stat-card"><div class="stat-card-info"><h4>Total Revenue</h4><div class="stat-card-num">${formatPrice(totalRevenue)}</div></div></div>
+        <div class="admin-stat-card"><div class="stat-card-info"><h4>Total Orders</h4><div class="stat-card-num">${DB.orders.length}</div></div></div>
+        <div class="admin-stat-card"><div class="stat-card-info"><h4>Active Users</h4><div class="stat-card-num">${DB.users.length}</div></div></div>
+      </div>
+      <div style="display:flex; gap:18px; flex-wrap:wrap; margin-bottom:22px;">
+        ${Object.entries(orderCounts).map(([key,val]) => `
+          <div class="admin-panel-card" style="flex:1 1 140px; min-width:140px; text-align:center;">
+            <h4 style="margin-bottom:8px; font-size:0.9rem;">${key.charAt(0).toUpperCase() + key.slice(1)}</h4>
+            <div style="font-size:1.5rem; font-weight:700; color:var(--primary-color);">${val}</div>
+          </div>
+        `).join('')}
+      </div>
+      <div class="admin-panel-card" style="background:var(--bg-light);">
+        <h4 style="margin-bottom:14px;">Top Customers</h4>
+        <table class="admin-table">
+          <thead><tr><th>Name</th><th>Email</th><th>Orders</th><th>Spend</th></tr></thead>
+          <tbody>
+            ${topCustomers.map(u => `
+              <tr>
+                <td>${u.firstName} ${u.lastName || ''}</td>
+                <td>${u.email}</td>
+                <td>${u.orders}</td>
+                <td>${formatPrice(u.spend)}</td>
+              </tr>
+            `).join('')}
+            ${topCustomers.length === 0 ? '<tr><td colspan="4" style="text-align:center;color:var(--grey-dark);">No customer data available.</td></tr>' : ''}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  `;
+}
+
+function renderAdminAnnouncement(mount) {
+  mount.innerHTML = `
+    <div class="admin-panel-card" style="max-width:700px;">
+      <div class="admin-card-header">
+        <h3 class="admin-card-title">Announcement Bar Manager</h3>
+      </div>
+      <form class="form-grid" onsubmit="saveAdminAnnouncement(event)">
+        <div class="form-field form-group-full">
+          <label for="announcement-text">Announcement HTML Content</label>
+          <textarea id="announcement-text" rows="6">${DB.settings.announcementText}</textarea>
+        </div>
+        <div class="form-field">
+          <label for="announcement-enabled">Show Announcement</label>
+          <select id="announcement-enabled">
+            <option value="true" ${DB.settings.announcementText ? 'selected' : ''}>Visible</option>
+            <option value="false">Hidden</option>
+          </select>
+        </div>
+        <div class="form-group-full" style="text-align:right;">
+          <button class="btn btn-primary" style="width:100%;">Save Announcement</button>
+        </div>
+      </form>
+    </div>
+  `;
+}
+
+function saveAdminAnnouncement(e) {
+  e.preventDefault();
+  const content = document.getElementById('announcement-text').value;
+  const enabled = document.getElementById('announcement-enabled').value === 'true';
+  DB.settings.announcementText = enabled ? content : '';
+  localStorage.setItem('blue_aura_settings', JSON.stringify(DB.settings));
+  showToast('Announcement bar saved.');
+  switchAdminTab('announcement');
+}
+
 function renderAdminSettings(mount) {
   mount.innerHTML = `
     <div class="admin-panel-card" style="max-width: 700px;">
