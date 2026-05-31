@@ -4589,19 +4589,30 @@ if (quickCloseBtn) quickCloseBtn.addEventListener("click", closeQuickView);
 
 // Routing state event listeners
 window.addEventListener("hashchange", router);
-window.addEventListener("DOMContentLoaded", () => {
-  // Fade out spinner
-  setTimeout(() => {
-    const loading = document.getElementById("loading-overlay");
-    if (loading) {
-      loading.style.opacity = "0";
-      setTimeout(() => loading.style.display = "none", 500);
-    }
-  }, 600);
 
+function hideLoadingOverlay() {
+  const loading = document.getElementById("loading-overlay");
+  if (!loading) return;
+  loading.style.opacity = "0";
+  loading.style.visibility = "hidden";
+  setTimeout(() => {
+    loading.style.display = "none";
+  }, 500);
+}
+
+window.addEventListener("DOMContentLoaded", () => {
+  setTimeout(hideLoadingOverlay, 600);
   initDB();
   router();
 });
+
+window.addEventListener("load", () => {
+  setTimeout(hideLoadingOverlay, 300);
+});
+
+if (document.readyState === "complete" || document.readyState === "interactive") {
+  setTimeout(hideLoadingOverlay, 600);
+}
 
 // Setup Mobile Menu toggle
 const menuTrigger = document.getElementById("mobile-menu-trigger");
