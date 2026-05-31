@@ -95,9 +95,116 @@ function initFirebaseAuth() {
   try {
     firebase.initializeApp(FIREBASE_CONFIG);
     firebaseAuthInitialized = true;
-    logToTerminal('[Firebase] Firebase initialized successfully. Google authentication is ready.');
+    // Expose auth & firestore
+    window.firebaseAuth = firebase.auth();
+    window.firebaseDB = firebase.firestore();
+    logToTerminal('[Firebase] Firebase initialized successfully. Auth & Firestore ready.');
+
+    // Listen for auth state changes
+    firebase.auth().onAuthStateChanged(async (user) => {
+      if (user) {
+        STATE.currentUser = {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName || '',
+          photoURL: user.photoURL || ''
+        };
+
+        // Ensure user exists in Firestore
+        await createOrUpdateUserProfile(user);
+
+        // Notify backend to send login email (if backend configured)
+        await sendLoginEmailToUser(user).catch(() => {});
+      } else {
+        STATE.currentUser = null;
+      }
+
+      if (typeof updateAuthUi === 'function') updateAuthUi(STATE.currentUser);
+    });
+
+    // Expose helper functions for UI bindings
+    window.registerWithEmail = async (email, password, displayName) => {
+      const cred = await firebase.auth().createUserWithEmailAndPassword(email, password);
+      if (displayName && cred.user) await cred.user.updateProfile({ displayName });
+      return cred.user;
+    };
+
+    window.signInWithEmail = async (email, password) => {
+      const cred = await firebase.auth().signInWithEmailAndPassword(email, password);
+      return cred.user;
+    };
+
+    window.signOutUser = async () => {
+      return firebase.auth().signOut();
+    };
+
+    window.signInWithGoogle = async () => {
+      const provider = new firebase.auth.GoogleAuthProvider();
+      const result = await firebase.auth().signInWithPopup(provider);
+      return result.user;
+    };
+
   } catch (err) {
     logToTerminal('[Firebase] Failed to initialize Firebase: ' + err.message);
+  }
+}
+
+// Create or update user profile in Firestore
+async function createOrUpdateUserProfile(user) {
+  try {
+    const db = firebase.firestore();
+    const ref = db.collection('users').doc(user.uid);
+    const doc = await ref.get();
+    const payload = {
+      email: user.email,
+      displayName: user.displayName || '',
+      photoURL: user.photoURL || '',
+      lastLogin: new Date().toISOString()
+    };
+
+    if (doc.exists) {
+      await ref.update(payload);
+      logToTerminal('[Firestore] Updated user profile for ' + user.email);
+    } else {
+      await ref.set(Object.assign({ createdAt: new Date().toISOString() }, payload));
+      logToTerminal('[Firestore] Created user profile for ' + user.email);
+    }
+  } catch (err) {
+    logToTerminal('[Firestore] Failed to write user profile: ' + err.message);
+  }
+}
+
+// Notify backend to send login email to user (backend handles SMTP)
+async function sendLoginEmailToUser(user) {
+  try {
+    const payload = {
+      to: user.email,
+      subject: 'Blue Aura: New Login Detected',
+      actionType: 'login',
+      order: {
+        id: user.uid,
+        email: user.email,
+        customerName: user.displayName || user.email,
+        date: new Date().toISOString()
+      }
+    };
+
+    const resp = await fetch(STATE.liveBackendUrl + '/api/email/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const result = await resp.json().catch(() => ({}));
+    if (result && result.success) {
+      logToTerminal('[Email] Login notification sent to ' + user.email);
+    } else {
+      logToTerminal('[Email] Login notification queued/logged (SMTP may be unconfigured).');
+    }
+    return result;
+  } catch (err) {
+    logToTerminal('[Email] Failed to call backend email endpoint: ' + err.message);
+    throw err;
   }
 }
 

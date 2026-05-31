@@ -62,3 +62,15 @@ The server will boot up at `http://localhost:5000`.
 
 ### 6. Frontend Dynamic Connect
 Once the server is running, open `index.html` in any browser. The frontend will automatically detect the backend on port `5000` and switch from local simulator mode to **Live Mode**, writing orders to the server database and dispatching real Gmail notifications!
+
+### 7. Configure Firebase Web App (Frontend)
+
+To enable user authentication and Firestore user storage you must create a Firebase Web App and paste its config into `app.js` `FIREBASE_CONFIG` object.
+
+- Go to https://console.firebase.google.com/ and create a project (or use an existing one).
+- In Project Settings -> General, under "Your apps" add a Web App and copy the Firebase config values.
+- Open the frontend file `app.js` and replace the `FIREBASE_CONFIG` placeholder values with your project's values.
+
+Make sure the frontend loads the Firebase libs (already included in `index.html`) and that the backend `STATE.liveBackendUrl` points to `http://localhost:5000` when testing locally.
+
+Security note: Never commit real API keys or passwords to a public repository. Use environment variables or server-side secrets for private credentials.
